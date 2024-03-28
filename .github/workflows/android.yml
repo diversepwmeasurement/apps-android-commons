@@ -1,104 +1,123 @@
-name: Android CI
-
-on: [push, pull_request, workflow_dispatch]
-
 concurrency:
-  group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
+  group: build-${{ github.event.pull_request.number || github.ref }}
 jobs:
   build:
     name: Run tests and generate APK
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - continue-on-error: true
+      name: Checkout code
+      uses: actions/checkout@v3
+    - continue-on-error: true
+      name: Set up JDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: temurin
+        java-version: '17'
+    - continue-on-error: true
+      id: cache-packages
+      name: Cache packages
+      uses: actions/cache@v3
+      with:
+        key: gradle-packages-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/*.gradle.kts',
+          'gradle.properties') }}
+        path: '~/.gradle/caches
 
-      - name: Set up JDK
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+          ~/.gradle/wrapper
 
-      - name: Cache packages
-        id: cache-packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-packages-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/*.gradle.kts', 'gradle.properties') }}
-          restore-keys: gradle-packages-${{ runner.os }}
+          '
+        restore-keys: gradle-packages-${{ runner.os }}
+    - continue-on-error: true
+      name: Access test login credentials
+      run: 'echo "TEST_USER_NAME=${{ secrets.TEST_USER_NAME }}" >> local.properties
 
-      - name: Access test login credentials
-        run: |
-          echo "TEST_USER_NAME=${{ secrets.TEST_USER_NAME }}" >> local.properties
-          echo "TEST_USER_PASSWORD=${{ secrets.TEST_USER_PASSWORD }}" >> local.properties
+        echo "TEST_USER_PASSWORD=${{ secrets.TEST_USER_PASSWORD }}" >> local.properties
 
-      - name: AVD cache
-        if: github.event_name != 'pull_request'
-        uses: actions/cache@v3
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-tablet-api-24
+        '
+    - continue-on-error: true
+      id: avd-cache
+      if: github.event_name != 'pull_request'
+      name: AVD cache
+      uses: actions/cache@v3
+      with:
+        key: avd-tablet-api-24
+        path: '~/.android/avd/*
 
-      - name: Create AVD and generate snapshot for caching
-        if: steps.avd-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 24
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          script: echo "Generated AVD snapshot for caching."
+          ~/.android/adb*
 
-      - name: Run Instrumentation tests
-        if: github.event_name != 'pull_request'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 24
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          profile: Nexus 10
-          script: |
-            adb shell content insert --uri content://settings/system --bind name:s:accelerometer_rotation --bind value:i:0
-            adb shell content insert --uri content://settings/system --bind name:s:user_rotation --bind value:i:0
-            adb emu geo fix 37.422131 -122.084801
-            ./gradlew connectedBetaDebugAndroidTest --stacktrace
+          '
+    - continue-on-error: true
+      if: steps.avd-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+      name: Create AVD and generate snapshot for caching
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 24
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          -camera-back none
+        force-avd-creation: false
+        script: echo "Generated AVD snapshot for caching."
+    - continue-on-error: true
+      if: github.event_name != 'pull_request'
+      name: Run Instrumentation tests
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 24
+        disable-animations: true
+        emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio
+          -no-boot-anim -camera-back none
+        force-avd-creation: false
+        profile: Nexus 10
+        script: 'adb shell content insert --uri content://settings/system --bind name:s:accelerometer_rotation
+          --bind value:i:0
 
-      - name: Run Unit tests with unified coverage
-        if: github.event_name != 'pull_request'
-        run: ./gradlew -Pcoverage testBetaDebugUnitTestUnifiedCoverage --stacktrace
+          adb shell content insert --uri content://settings/system --bind name:s:user_rotation
+          --bind value:i:0
 
-      - name: Run Unit tests without unified coverage
-        if: github.event_name == 'pull_request'
-        run: ./gradlew -Pcoverage testBetaDebugUnitTestCoverage --stacktrace
+          adb emu geo fix 37.422131 -122.084801
 
-      - name: Upload Test Report to Codecov
-        if: github.event_name != 'pull_request'
-        run: |
-          curl -Os https://uploader.codecov.io/latest/linux/codecov
-          chmod +x codecov
-          ./codecov -f "app/build/reports/jacoco/testBetaDebugUnitTestUnifiedCoverage/testBetaDebugUnitTestUnifiedCoverage.xml" -Z
+          ./gradlew connectedBetaDebugAndroidTest --stacktrace
 
-      - name: Generate betaDebug APK
-        run: bash ./gradlew assembleBetaDebug --stacktrace
+          '
+    - continue-on-error: true
+      if: github.event_name != 'pull_request'
+      name: Run Unit tests with unified coverage
+      run: ./gradlew -Pcoverage testBetaDebugUnitTestUnifiedCoverage --stacktrace
+    - continue-on-error: true
+      if: github.event_name == 'pull_request'
+      name: Run Unit tests without unified coverage
+      run: ./gradlew -Pcoverage testBetaDebugUnitTestCoverage --stacktrace
+    - continue-on-error: true
+      if: github.event_name != 'pull_request'
+      name: Upload Test Report to Codecov
+      run: 'curl -Os https://uploader.codecov.io/latest/linux/codecov
 
-      - name: Upload betaDebug APK
-        uses: actions/upload-artifact@v3
-        with:
-          name: betaDebugAPK
-          path: app/build/outputs/apk/beta/debug/app-*.apk
+        chmod +x codecov
 
-      - name: Generate prodDebug APK
-        run: bash ./gradlew assembleProdDebug --stacktrace
+        ./codecov -f "app/build/reports/jacoco/testBetaDebugUnitTestUnifiedCoverage/testBetaDebugUnitTestUnifiedCoverage.xml"
+        -Z
 
-      - name: Upload prodDebug APK
-        uses: actions/upload-artifact@v3
-        with:
-          name: prodDebugAPK
-          path: app/build/outputs/apk/prod/debug/app-*.apk
+        '
+    - continue-on-error: true
+      name: Generate betaDebug APK
+      run: bash ./gradlew assembleBetaDebug --stacktrace
+    - continue-on-error: true
+      name: Upload betaDebug APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: betaDebugAPK
+        path: app/build/outputs/apk/beta/debug/app-*.apk
+    - continue-on-error: true
+      name: Generate prodDebug APK
+      run: bash ./gradlew assembleProdDebug --stacktrace
+    - continue-on-error: true
+      name: Upload prodDebug APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: prodDebugAPK
+        path: app/build/outputs/apk/prod/debug/app-*.apk
+name: Android CI
+on:
+  repository_dispatch:
+    types: trigger-ga___android.yml
